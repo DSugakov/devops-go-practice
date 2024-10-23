@@ -21,30 +21,35 @@ const (
 	memoryUsageThreshold  = 80
 	diskUsageThreshold    = 90
 	networkUsageThreshold = 90
+
+	bytesInMegabyte = 1024 * 1024
+	bytesInMegabit  = 1000 * 1000
+	percent         = 100
 )
 
 type Metric struct {
-	threshold  int
-	message    string
-	unit       string
-	checkUsage func() (int, int)
+	Capacity   int
+	Usage      int
+	Threshold  int
+	Message    string
+	Unit       string
+	CheckUsage func(int, int) (int, int)
 }
 
 func main() {
-	resultStream := startPolling(serverURL, maxRetryCount)
+	metricsStream := startPolling(serverURL, maxRetryCount)
 
-	for response := range resultStream() {
+	for response := range metricsStream() {
 		metrics, err := parseMetrics(response)
 		if err != nil {
-			fmt.Println("Error parsing metrics:", err)
 			continue
 		}
 
 		metricList := []Metric{
-			newMetric(metrics.CPULoad, cpuLoadThreshold, "Load Average is too high: %d\n", ""),
-			newMetricPercentage(metrics.MemoryUsage, metrics.MemoryCapacity, memoryUsageThreshold, "Memory usage too high: %d%%\n"),
-			newMetricFreeResource(metrics.DiskUsage, metrics.DiskCapacity, diskUsageThreshold, "Free disk space is too low: %d Mb left\n", 1024*1024),
-			newMetricFreeResource(metrics.NetworkActivity, metrics.NetworkCapacity, networkUsageThreshold, "Network bandwidth usage high: %d Mbit/s available\n", 1000*1000),
+			newMetric(metrics.CPULoad, metrics.CPULoad, cpuLoadThreshold, "Load Average is too high: %d\n", "", getDirectUsage),
+			newMetric(metrics.MemoryCapacity, metrics.MemoryUsage, memoryUsageThreshold, "Memory usage too high: %d%%\n", "%", getPercentageUsage),
+			newMetric(metrics.DiskCapacity, metrics.DiskUsage, diskUsageThreshold, "Free disk space is too low: %d Mb left\n", "Mb", getFreeDiskSpace),
+			newMetric(metrics.NetworkCapacity, metrics.NetworkActivity, networkUsageThreshold, "Network bandwidth usage high: %d Mbit/s available\n", "Mbit/s", getFreeNetworkBandwidth),
 		}
 
 		for _, metric := range metricList {
@@ -53,48 +58,46 @@ func main() {
 	}
 }
 
-func newMetric(value, threshold int, message, unit string) Metric {
-	return Metric{
-		threshold:  threshold,
-		message:    message,
-		unit:       unit,
-		checkUsage: func() (int, int) { return value, value },
-	}
-}
-
-func newMetricPercentage(usage, capacity, threshold int, message string) Metric {
-	return Metric{
-		threshold:  threshold,
-		message:    message,
-		unit:       "%",
-		checkUsage: func() (int, int) { return usage * 100 / capacity, 0 },
-	}
-}
-
-func newMetricFreeResource(usage, capacity, threshold int, message string, unitInBytes int) Metric {
-	return Metric{
-		threshold:  threshold,
-		message:    message,
-		unit:       "Mb",
-		checkUsage: func() (int, int) { return usage * 100 / capacity, (capacity - usage) / unitInBytes },
-	}
+func newMetric(capacity, usage, threshold int, message, unit string, checkUsage func(int, int) (int, int)) Metric {
+	return Metric{Capacity: capacity, Usage: usage, Threshold: threshold, Message: message, Unit: unit, CheckUsage: checkUsage}
 }
 
 func validateResourceUsage(m Metric) {
-	usagePercent, freeResource := m.checkUsage()
+	usagePercent, freeResource := m.CheckUsage(m.Capacity, m.Usage)
 
-	if usagePercent > m.threshold {
-		if m.unit == "%" || m.unit == "" {
-			fmt.Printf(m.message, usagePercent)
+	if usagePercent > m.Threshold {
+		if m.Unit == "%" || m.Unit == "" {
+			fmt.Printf(m.Message, usagePercent)
 		} else {
-			fmt.Printf(m.message, freeResource)
+			fmt.Printf(m.Message, freeResource)
 		}
 	}
 }
 
+func getDirectUsage(capacity, _ int) (int, int) {
+	return capacity, capacity
+}
+
+func getPercentageUsage(capacity, usage int) (int, int) {
+	usagePercent := usage * percent / capacity
+	return usagePercent, usagePercent
+}
+
+func getFreeDiskSpace(capacity, usage int) (int, int) {
+	usagePercent := usage * percent / capacity
+	freeResource := (capacity - usage) / bytesInMegabyte
+	return usagePercent, freeResource
+}
+
+func getFreeNetworkBandwidth(capacity, usage int) (int, int) {
+	usagePercent := usage * percent / capacity
+	freeResource := (capacity - usage) / bytesInMegabit
+	return usagePercent, freeResource
+}
+
 func startPolling(url string, retries int) func() chan string {
 	return func() chan string {
-		dataChannel := make(chan string, 3)
+		dataChannel := make(chan string)
 		client := http.Client{Timeout: httpTimeout}
 		errorCounter := 0
 
@@ -112,17 +115,17 @@ func startPolling(url string, retries int) func() chan string {
 				response, err := client.Get(url)
 				if err != nil || response.StatusCode != http.StatusOK {
 					errorCounter++
-					fmt.Println("Error fetching server data:", err)
+					fmt.Printf("Request error: %v, status code: %d\n", err, response.StatusCode)
 					continue
 				}
 
 				body, err := io.ReadAll(response.Body)
+				response.Body.Close()
 				if err != nil {
 					errorCounter++
-					fmt.Println("Failed to parse response:", err)
+					fmt.Printf("Error reading response: %v\n", err)
 					continue
 				}
-				response.Body.Close()
 
 				dataChannel <- string(body)
 				errorCounter = 0
