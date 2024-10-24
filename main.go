@@ -36,6 +36,106 @@ type Metric struct {
 	CheckUsage func(int, int) (int, int)
 }
 
+func main() {
+	metricsStream := startPolling(serverURL, maxRetryCount)
+
+	for response := range metricsStream() {
+		metrics, err := parseMetrics(response)
+		if err != nil {
+			continue
+		}
+
+		metricList := []Metric{
+			newMetric(metrics.CPULoad, metrics.CPULoad, cpuLoadThreshold, "Load Average is too high: %d\n", "", getDirectUsage),
+			newMetric(metrics.MemoryCapacity, metrics.MemoryUsage, memoryUsageThreshold, "Memory usage too high: %d%%\n", "%", getPercentageUsage),
+			newMetric(metrics.DiskCapacity, metrics.DiskUsage, diskUsageThreshold, "Free disk space is too low: %d Mb left\n", "Mb", getFreeDiskSpace),
+			newMetric(metrics.NetworkCapacity, metrics.NetworkActivity, networkUsageThreshold, "Network bandwidth usage high: %d Mbit/s available\n", "Mbit/s", getFreeNetworkBandwidth),
+		}
+
+		for _, metric := range metricList {
+			validateResourceUsage(metric)
+		}
+	}
+}
+
+func newMetric(capacity, usage, threshold int, message, unit string, checkUsage func(int, int) (int, int)) Metric {
+	return Metric{Capacity: capacity, Usage: usage, Threshold: threshold, Message: message, Unit: unit, CheckUsage: checkUsage}
+}
+
+func validateResourceUsage(m Metric) {
+	usagePercent, freeResource := m.CheckUsage(m.Capacity, m.Usage)
+
+	if usagePercent > m.Threshold {
+		if m.Unit == "%" || m.Unit == "" {
+			fmt.Printf(m.Message, usagePercent)
+		} else {
+			fmt.Printf(m.Message, freeResource)
+		}
+	}
+}
+
+func getDirectUsage(capacity, _ int) (int, int) {
+	return capacity, capacity
+}
+
+func getPercentageUsage(capacity, usage int) (int, int) {
+	usagePercent := usage * percent / capacity
+	return usagePercent, usagePercent
+}
+
+func getFreeDiskSpace(capacity, usage int) (int, int) {
+	usagePercent := usage * percent / capacity
+	freeResource := (capacity - usage) / bytesInMegabyte
+	return usagePercent, freeResource
+}
+
+func getFreeNetworkBandwidth(capacity, usage int) (int, int) {
+	usagePercent := usage * percent / capacity
+	freeResource := (capacity - usage) / bytesInMegabit
+	return usagePercent, freeResource
+}
+
+func startPolling(url string, retries int) func() chan string {
+	return func() chan string {
+		dataChannel := make(chan string)
+		client := http.Client{Timeout: httpTimeout}
+		errorCounter := 0
+
+		go func() {
+			defer close(dataChannel)
+
+			for {
+				time.Sleep(requestInterval)
+
+				if errorCounter >= retries {
+					fmt.Println("Unable to fetch server statistics")
+					break
+				}
+
+				response, err := client.Get(url)
+				if err != nil || response.StatusCode != http.StatusOK {
+					errorCounter++
+					fmt.Printf("Request error: %v, status code: %d\n", err, response.StatusCode)
+					continue
+				}
+
+				body, err := io.ReadAll(response.Body)
+				response.Body.Close()
+				if err != nil {
+					errorCounter++
+					fmt.Printf("Error reading response: %v\n", err)
+					continue
+				}
+
+				dataChannel <- string(body)
+				errorCounter = 0
+			}
+		}()
+
+		return dataChannel
+	}
+}
+
 type ServerMetrics struct {
 	CPULoad         int
 	MemoryCapacity  int
@@ -46,140 +146,6 @@ type ServerMetrics struct {
 	NetworkActivity int
 }
 
-func main() {
-	metricsStream := startPolling(serverURL)
-
-	for data := range metricsStream {
-		metrics, err := parseMetrics(data)
-		if err != nil {
-			fmt.Println("Error parsing metrics:", err)
-			continue
-		}
-
-		metricsList := createMetricsList(metrics)
-
-		for _, metric := range metricsList {
-			checkMetric(metric)
-		}
-	}
-}
-
-// Функция для создания списка метрик
-func createMetricsList(metrics ServerMetrics) []Metric {
-	return []Metric{
-		{
-			Capacity:   metrics.CPULoad,
-			Usage:      metrics.CPULoad,
-			Threshold:  cpuLoadThreshold,
-			Message:    "Load Average is too high: %d\n",
-			Unit:       "",
-			CheckUsage: checkDirect,
-		},
-		{
-			Capacity:   metrics.MemoryCapacity,
-			Usage:      metrics.MemoryUsage,
-			Threshold:  memoryUsageThreshold,
-			Message:    "Memory usage too high: %d%%\n",
-			Unit:       "%",
-			CheckUsage: checkPercentage,
-		},
-		{
-			Capacity:   metrics.DiskCapacity,
-			Usage:      metrics.DiskUsage,
-			Threshold:  diskUsageThreshold,
-			Message:    "Free disk space is too low: %d Mb left\n",
-			Unit:       "Mb",
-			CheckUsage: checkDiskSpace,
-		},
-		{
-			Capacity:   metrics.NetworkCapacity,
-			Usage:      metrics.NetworkActivity,
-			Threshold:  networkUsageThreshold,
-			Message:    "Network bandwidth usage high: %d Mbit/s available\n",
-			Unit:       "Mbit/s",
-			CheckUsage: checkNetworkUsage,
-		},
-	}
-}
-
-// Функция для проверки метрики
-func checkMetric(m Metric) {
-	usage, free := m.CheckUsage(m.Capacity, m.Usage)
-
-	if usage > m.Threshold {
-		if m.Unit == "%" || m.Unit == "" {
-			fmt.Printf(m.Message, usage)
-		} else {
-			fmt.Printf(m.Message, free)
-		}
-	}
-}
-
-// Проверка использования CPU напрямую
-func checkDirect(capacity, usage int) (int, int) {
-	return usage, capacity
-}
-
-// Проверка процентного использования (например, памяти)
-func checkPercentage(capacity, usage int) (int, int) {
-	return usage * percent / capacity, usage
-}
-
-// Проверка свободного дискового пространства
-func checkDiskSpace(capacity, usage int) (int, int) {
-	usagePercent := usage * percent / capacity
-	freeSpace := (capacity - usage) / bytesInMegabyte
-	return usagePercent, freeSpace
-}
-
-// Проверка свободной пропускной способности сети
-func checkNetworkUsage(capacity, usage int) (int, int) {
-	usagePercent := usage * percent / capacity
-	freeBandwidth := (capacity - usage) / bytesInMegabit
-	return usagePercent, freeBandwidth
-}
-
-// Функция для опроса сервера
-func startPolling(url string) chan string {
-	dataChannel := make(chan string)
-	client := http.Client{Timeout: httpTimeout}
-
-	go func() {
-		defer close(dataChannel)
-		errorCounter := 0
-
-		for {
-			time.Sleep(requestInterval)
-
-			if errorCounter >= maxRetryCount {
-				fmt.Println("Max retries reached")
-				break
-			}
-
-			response, err := client.Get(url)
-			if err != nil {
-				fmt.Println("Request error:", err)
-				errorCounter++
-				continue
-			}
-			defer response.Body.Close()
-
-			body, err := io.ReadAll(response.Body)
-			if err != nil {
-				fmt.Println("Error reading response:", err)
-				errorCounter++
-				continue
-			}
-
-			dataChannel <- string(body)
-			errorCounter = 0
-		}
-	}()
-
-	return dataChannel
-}
-
-// Парсинг метрик с сервера
 func parseMetrics(data string) (ServerMetrics, error) {
 	parts := strings.Split(data, ",")
 	if len(parts) != expectedMetricsLength {
