@@ -79,30 +79,37 @@ func getDirectUsage(capacity, _ int) (int, int) {
 }
 
 func getPercentageUsage(capacity, usage int) (int, int) {
-	usagePercent := usage * fullPercent / capacity
-	return usagePercent, usagePercent
+	if capacity == 0 {
+		return 0, 0
+	}
+	return usage * fullPercent / capacity, usage * fullPercent / capacity
 }
 
 func getFreeDiskSpace(capacity, usage int) (int, int) {
-	usagePercent := usage * fullPercent / capacity
+	if capacity == 0 {
+		return 0, 0
+	}
 	freeResource := (capacity - usage) / bytesInMegabyte
-	return usagePercent, freeResource
+	return usage * fullPercent / capacity, freeResource
 }
 
 func getFreeNetworkBandwidth(capacity, usage int) (int, int) {
-	usagePercent := usage * fullPercent / capacity
+	if capacity == 0 {
+		return 0, 0
+	}
 	freeResource := (capacity - usage) / bytesInMegabit
-	return usagePercent, freeResource
+	return usage * fullPercent / capacity, freeResource
 }
 
 func startPolling(url string, retries int) func() chan string {
 	return func() chan string {
 		dataChannel := make(chan string)
 		client := http.Client{Timeout: httpTimeout}
-		errorCounter := 0
 
 		go func() {
 			defer close(dataChannel)
+
+			errorCounter := 0
 
 			for {
 				time.Sleep(requestInterval)
@@ -115,7 +122,7 @@ func startPolling(url string, retries int) func() chan string {
 				response, err := client.Get(url)
 				if err != nil || response.StatusCode != http.StatusOK {
 					errorCounter++
-					fmt.Printf("Request error: %v, status code: %d\n", err, response.StatusCode)
+					fmt.Printf("Request error: %v\n", err)
 					continue
 				}
 
