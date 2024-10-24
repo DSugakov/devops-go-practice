@@ -24,7 +24,7 @@ const (
 
 	bytesInMegabyte = 1024 * 1024
 	bytesInMegabit  = 1000 * 1000
-	fullPercent     = 100
+	percent         = 100
 )
 
 type Metric struct {
@@ -79,18 +79,18 @@ func getDirectUsage(capacity, _ int) (int, int) {
 }
 
 func getPercentageUsage(capacity, usage int) (int, int) {
-	usagePercent := usage * fullPercent / capacity
+	usagePercent := usage * percent / capacity
 	return usagePercent, usagePercent
 }
 
 func getFreeDiskSpace(capacity, usage int) (int, int) {
-	usagePercent := usage * fullPercent / capacity
+	usagePercent := usage * percent / capacity
 	freeResource := (capacity - usage) / bytesInMegabyte
 	return usagePercent, freeResource
 }
 
 func getFreeNetworkBandwidth(capacity, usage int) (int, int) {
-	usagePercent := usage * fullPercent / capacity
+	usagePercent := usage * percent / capacity
 	freeResource := (capacity - usage) / bytesInMegabit
 	return usagePercent, freeResource
 }
