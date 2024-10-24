@@ -66,13 +66,38 @@ func main() {
 
 func createMetricsList(metrics ServerMetrics) []Metric {
 	return []Metric{
-		{Capacity: metrics.CPULoad, Usage: metrics.CPULoad, Threshold: cpuLoadThreshold, Message: "Load Average is too high: %d\n", Unit: "", CheckUsage: checkDirect},
-		{Capacity: metrics.CPULoad, Usage: metrics.CPULoad, Threshold: cpuLoadThreshold, Message: "Load Average is too high: %d\n", Unit: "", CheckUsage: checkDirect}, // Повторная проверка CPULoad
-		{Capacity: metrics.MemoryCapacity, Usage: metrics.MemoryUsage, Threshold: memoryUsageThreshold, Message: "Memory usage too high: %d%%\n", Unit: "%", CheckUsage: checkPercentage},
-		{Capacity: metrics.DiskCapacity, Usage: metrics.DiskUsage, Threshold: diskUsageThreshold, Message: "Free disk space is too low: %d Mb left\n", Unit: "Mb", CheckUsage: checkDiskSpace},
-		{Capacity: metrics.MemoryCapacity, Usage: metrics.MemoryUsage, Threshold: memoryUsageThreshold, Message: "Memory usage too high: %d%%\n", Unit: "%", CheckUsage: checkPercentage}, // Повторная проверка памяти
-		{Capacity: metrics.NetworkCapacity, Usage: metrics.NetworkActivity, Threshold: networkUsageThreshold, Message: "Network bandwidth usage high: %d Mbit/s available\n", Unit: "Mbit/s", CheckUsage: checkNetworkUsage},
-		{Capacity: metrics.DiskCapacity, Usage: metrics.DiskUsage, Threshold: diskUsageThreshold, Message: "Free disk space is too low: %d Mb left\n", Unit: "Mb", CheckUsage: checkDiskSpace}, // Повторная проверка диска
+		{
+			Capacity:   metrics.CPULoad,
+			Usage:      metrics.CPULoad,
+			Threshold:  cpuLoadThreshold,
+			Message:    "Load Average is too high: %d\n",
+			Unit:       "",
+			CheckUsage: checkDirect,
+		},
+		{
+			Capacity:   metrics.MemoryCapacity,
+			Usage:      metrics.MemoryUsage,
+			Threshold:  memoryUsageThreshold,
+			Message:    "Memory usage too high: %d%%\n",
+			Unit:       "%",
+			CheckUsage: checkPercentage,
+		},
+		{
+			Capacity:   metrics.DiskCapacity,
+			Usage:      metrics.DiskUsage,
+			Threshold:  diskUsageThreshold,
+			Message:    "Free disk space is too low: %d Mb left\n",
+			Unit:       "Mb",
+			CheckUsage: checkDiskSpace,
+		},
+		{
+			Capacity:   metrics.NetworkCapacity,
+			Usage:      metrics.NetworkActivity,
+			Threshold:  networkUsageThreshold,
+			Message:    "Network bandwidth usage high: %d Mbit/s available\n",
+			Unit:       "Mbit/s",
+			CheckUsage: checkNetworkUsage,
+		},
 	}
 }
 
