@@ -64,6 +64,7 @@ func main() {
 	}
 }
 
+// Функция для создания списка метрик
 func createMetricsList(metrics ServerMetrics) []Metric {
 	return []Metric{
 		{
@@ -98,33 +99,10 @@ func createMetricsList(metrics ServerMetrics) []Metric {
 			Unit:       "Mbit/s",
 			CheckUsage: checkNetworkUsage,
 		},
-		{
-			Capacity:   metrics.CPULoad,
-			Usage:      metrics.CPULoad,
-			Threshold:  cpuLoadThreshold,
-			Message:    "Load Average is too high: %d\n",
-			Unit:       "",
-			CheckUsage: checkDirect,
-		},
-		{
-			Capacity:   metrics.MemoryCapacity,
-			Usage:      metrics.MemoryUsage,
-			Threshold:  memoryUsageThreshold,
-			Message:    "Memory usage too high: %d%%\n",
-			Unit:       "%",
-			CheckUsage: checkPercentage,
-		},
-		{
-			Capacity:   metrics.DiskCapacity,
-			Usage:      metrics.DiskUsage,
-			Threshold:  diskUsageThreshold,
-			Message:    "Free disk space is too low: %d Mb left\n",
-			Unit:       "Mb",
-			CheckUsage: checkDiskSpace,
-		},
 	}
 }
 
+// Функция для проверки метрики
 func checkMetric(m Metric) {
 	usage, free := m.CheckUsage(m.Capacity, m.Usage)
 
@@ -137,26 +115,31 @@ func checkMetric(m Metric) {
 	}
 }
 
+// Проверка использования CPU напрямую
 func checkDirect(capacity, usage int) (int, int) {
-	return capacity, capacity
+	return usage, capacity
 }
 
+// Проверка процентного использования (например, памяти)
 func checkPercentage(capacity, usage int) (int, int) {
 	return usage * percent / capacity, usage
 }
 
+// Проверка свободного дискового пространства
 func checkDiskSpace(capacity, usage int) (int, int) {
 	usagePercent := usage * percent / capacity
 	freeSpace := (capacity - usage) / bytesInMegabyte
 	return usagePercent, freeSpace
 }
 
+// Проверка свободной пропускной способности сети
 func checkNetworkUsage(capacity, usage int) (int, int) {
 	usagePercent := usage * percent / capacity
 	freeBandwidth := (capacity - usage) / bytesInMegabit
 	return usagePercent, freeBandwidth
 }
 
+// Функция для опроса сервера
 func startPolling(url string) chan string {
 	dataChannel := make(chan string)
 	client := http.Client{Timeout: httpTimeout}
@@ -196,6 +179,7 @@ func startPolling(url string) chan string {
 	return dataChannel
 }
 
+// Парсинг метрик с сервера
 func parseMetrics(data string) (ServerMetrics, error) {
 	parts := strings.Split(data, ",")
 	if len(parts) != expectedMetricsLength {
