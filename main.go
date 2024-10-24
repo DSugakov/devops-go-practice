@@ -21,10 +21,6 @@ const (
 	memoryUsageThreshold  = 80
 	diskUsageThreshold    = 90
 	networkUsageThreshold = 90
-
-	bytesInMegabyte = 1024 * 1024
-	bytesInMegabit  = 1000 * 1000
-	fullPercent     = 100
 )
 
 type Metric struct {
@@ -42,6 +38,7 @@ func main() {
 	for response := range resultStream() {
 		metrics, err := parseMetrics(response)
 		if err != nil {
+			fmt.Println("Error parsing metrics:", err)
 			continue
 		}
 
@@ -99,30 +96,35 @@ func validateResourceUsage(m Metric) {
 }
 
 func getDirectUsage(capacity, _ int) (int, int) {
-	usagePercent := capacity
-	return usagePercent, usagePercent
+	return capacity, capacity
 }
 
 func getPercentageUsage(capacity, usage int) (int, int) {
-	usagePercent := usage * fullPercent / capacity
-	return usagePercent, usagePercent
+	if capacity == 0 {
+		return 0, 0
+	}
+	return usage * 100 / capacity, usage * 100 / capacity
 }
 
 func getFreeDiskSpace(capacity, usage int) (int, int) {
-	usagePercent := usage * fullPercent / capacity
-	freeResource := (capacity - usage) / bytesInMegabyte
-	return usagePercent, freeResource
+	if capacity == 0 {
+		return 0, 0
+	}
+	freeResource := (capacity - usage) / (1024 * 1024)
+	return usage * 100 / capacity, freeResource
 }
 
 func getFreeNetworkBandwidth(capacity, usage int) (int, int) {
-	usagePercent := usage * fullPercent / capacity
-	freeResource := (capacity - usage) / bytesInMegabit
-	return usagePercent, freeResource
+	if capacity == 0 {
+		return 0, 0
+	}
+	freeResource := (capacity - usage) / (1000 * 1000)
+	return usage * 100 / capacity, freeResource
 }
 
 func startPolling(url string, retries int) func() chan string {
 	return func() chan string {
-		dataChannel := make(chan string, 3)
+		dataChannel := make(chan string)
 		client := http.Client{Timeout: httpTimeout}
 		errorCounter := 0
 
@@ -133,7 +135,7 @@ func startPolling(url string, retries int) func() chan string {
 				time.Sleep(requestInterval)
 
 				if errorCounter >= retries {
-					fmt.Println("Unable to fetch server statistics")
+					fmt.Println("Не удалось получить статистику сервера после нескольких попыток.")
 					break
 				}
 
@@ -145,7 +147,7 @@ func startPolling(url string, retries int) func() chan string {
 
 				body, err := io.ReadAll(response.Body)
 				if err != nil {
-					errorCounter = incrementErrorCount(err, errorCounter, "failed to parse response")
+					errorCounter = incrementErrorCount(err, errorCounter, "не удалось прочитать тело ответа")
 					continue
 				}
 
@@ -162,10 +164,12 @@ func startPolling(url string, retries int) func() chan string {
 
 func processResponseError(response *http.Response, err error, errorCounter int) int {
 	if err != nil {
-		return incrementErrorCount(err, errorCounter, "failed to send request")
+		fmt.Printf("Ошибка при отправке запроса: %s\n", err)
+		return incrementErrorCount(err, errorCounter, "")
 	}
 	if response.StatusCode != http.StatusOK {
-		return incrementErrorCount(fmt.Errorf("invalid status code: %d", response.StatusCode), errorCounter, "")
+		fmt.Printf("Неверный код статуса: %d\n", response.StatusCode)
+		return incrementErrorCount(fmt.Errorf("invalid status code"), errorCounter, "")
 	}
 	return errorCounter
 }
@@ -190,14 +194,14 @@ type ServerMetrics struct {
 func parseMetrics(data string) (ServerMetrics, error) {
 	parts := strings.Split(data, ",")
 	if len(parts) != expectedMetricsLength {
-		return ServerMetrics{}, fmt.Errorf("invalid data format")
+		return ServerMetrics{}, fmt.Errorf("некорректный формат данных")
 	}
 
 	values := make([]int, expectedMetricsLength)
 	for i, part := range parts {
 		value, err := strconv.Atoi(part)
 		if err != nil {
-			return ServerMetrics{}, fmt.Errorf("invalid number: %s", part)
+			return ServerMetrics{}, fmt.Errorf("некорректное число: %s", part)
 		}
 		values[i] = value
 	}
